@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor de Imágenes Pro - Convierte, Recorta y Optimiza</title>
+    <meta name="description"
+        content="Aplicación profesional para editar imágenes: convierte a WebP, ajusta calidad, recorta y redimensiona sin perder calidad">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <h1 class="app-title">
+                    <svg class="title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                        <polyline points="21 15 16 10 5 21"></polyline>
+                    </svg>
+                    Editor de Imágenes Pro
+                </h1>
+                <p class="app-subtitle">Convierte, optimiza y transforma tus imágenes</p>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+
+
+            <!-- Upload Section -->
+            <section class="upload-section" id="uploadSection">
+                <div class="upload-area" id="uploadArea">
+                    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <h2 class="upload-title" id="uploadTitle">Arrastra tus imágenes aquí</h2>
+                    <p class="upload-text" id="uploadText">o haz clic para seleccionar múltiples</p>
+                    <input type="file" id="fileInput" accept="image/*" multiple hidden>
+                    <button class="btn btn-primary" id="selectFileBtn">Seleccionar Imágenes</button>
+                </div>
+            </section>
+
+
+            <!-- Editor Section -->
+            <section class="editor-section hidden" id="editorSection">
+                <div class="editor-layout">
+                    <!-- Left Panel - Controls -->
+                    <aside class="controls-panel">
+                        <div class="control-group">
+                            <h3 class="control-title">
+                                <svg class="control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                </svg>
+                                Prefijo Base
+                            </h3>
+                            <input type="text" id="fileName" class="input-field" placeholder="nombre-base">
+                            <p class="help-text">Las imágenes se numerarán automáticamente: nombre1, nombre2, nombre3...
+                            </p>
+                        </div>
+
+                        <div class="control-group">
+                            <h3 class="control-title">
+                                <svg class="control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <polyline points="16 18 22 12 16 6"></polyline>
+                                    <polyline points="8 6 2 12 8 18"></polyline>
+                                </svg>
+                                Formato
+                            </h3>
+                            <div class="format-options">
+                                <label class="radio-option">
+                                    <input type="radio" name="format" value="webp" checked>
+                                    <span class="radio-label">WebP</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="format" value="png">
+                                    <span class="radio-label">PNG</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="format" value="jpeg">
+                                    <span class="radio-label">JPEG</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="control-group">
+                            <h3 class="control-title">
+                                <svg class="control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                    <path
+                                        d="M12 1v6m0 6v6m8.66-13.66l-4.24 4.24m-4.24 4.24l-4.24 4.24M23 12h-6m-6 0H1m20.66 8.66l-4.24-4.24m-4.24-4.24l-4.24-4.24">
+                                    </path>
+                                </svg>
+                                Calidad
+                            </h3>
+                            <div class="slider-container">
+                                <input type="range" id="qualitySlider" class="slider" min="1" max="100" value="90">
+                                <span class="slider-value" id="qualityValue">90%</span>
+                            </div>
+                            <div class="file-size-estimate" id="fileSizeEstimate">
+                                <span class="estimate-label">Tamaño estimado:</span>
+                                <span class="estimate-value" id="estimateValue">Calculando...</span>
+                            </div>
+                        </div>
+
+                        <div class="control-group">
+                            <label class="checkbox-option">
+                                <input type="checkbox" id="globalQualityToggle">
+                                <span class="checkbox-label">Aplicar esta calidad a todas las imágenes</span>
+                            </label>
+                        </div>
+
+                        <!-- Batch Layout Controls -->
+                        <div class="control-group hidden" id="batchLayoutControls">
+                            <h3 class="control-title">
+                                <svg class="control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                    <line x1="3" y1="9" x2="21" y2="9"></line>
+                                    <line x1="9" y1="21" x2="9" y2="9"></line>
+                                </svg>
+                                Layout
+                            </h3>
+
+                            <label class="input-label">Dimensiones Globales</label>
+                            <div class="dimension-inputs">
+                                <div class="input-wrapper">
+                                    <label for="globalWidthInput" class="input-label">Ancho</label>
+                                    <input type="number" id="globalWidthInput" class="input-field" placeholder="800">
+                                </div>
+                                <div class="input-wrapper">
+                                    <label for="globalHeightInput" class="input-label">Alto</label>
+                                    <input type="number" id="globalHeightInput" class="input-field" placeholder="800">
+                                </div>
+                            </div>
+
+
+                            <div class="control-group" id="resizeControls">
+                                <h3 class="control-title">
+                                    <svg class="control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2">
+                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                    </svg>
+                                    Redimensionar
+                                </h3>
+                                <div class="dimension-inputs">
+                                    <div class="input-wrapper">
+                                        <label for="widthInput" class="input-label">Ancho</label>
+                                        <input type="number" id="widthInput" class="input-field" placeholder="Auto">
+                                    </div>
+                                    <div class="input-wrapper">
+                                        <label for="heightInput" class="input-label">Alto</label>
+                                        <input type="number" id="heightInput" class="input-field" placeholder="Auto">
+                                    </div>
+                                </div>
+                                <label class="checkbox-option">
+                                    <input type="checkbox" id="maintainAspect">
+                                    <span class="checkbox-label">Mantener proporción (sin recorte)</span>
+                                </label>
+                                <p class="help-text">Sin marcar: modo cover (rellena sin deformar, recortando exceso)
+                                </p>
+
+
+                            </div>
+
+                            <div class="action-buttons">
+
+                                <!-- Batch Mode Buttons -->
+                                <div class="batch-actions-wrapper">
+                                    <div class="batch-actions-row">
+                                        <button class="btn btn-primary btn-large" id="processBatchBtn">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <circle cx="12" cy="12" r="3"></circle>
+                                                <path
+                                                    d="M12 1v6m0 6v6m8.66-13.66l-4.24 4.24m-4.24 4.24l-4.24 4.24M23 12h-6m-6 0H1m20.66 8.66l-4.24-4.24m-4.24-4.24l-4.24-4.24">
+                                                </path>
+                                            </svg>
+                                            Procesar Todas
+                                        </button>
+                                        <button class="btn btn-success btn-large" id="downloadZipBtn">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                                <polyline points="7 10 12 15 17 10"></polyline>
+                                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                                            </svg>
+                                            Descargar Todas
+                                        </button>
+                                    </div>
+                                    <button class="btn btn-primary btn-full-width" id="processSelectedBtn" disabled>
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                            <polyline points="7 10 12 15 17 10"></polyline>
+                                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                                        </svg>
+                                        Descargar Seleccionada
+                                    </button>
+                                    <button class="btn btn-danger btn-full-width" id="clearBatchBtn">Borrar
+                                        Todo</button>
+                                </div>
+                            </div>
+
+                            <!-- Batch Queue Section -->
+                            <div class="batch-queue-section hidden" id="batchQueueSection">
+                                <h3 class="control-title">
+                                    <svg class="control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2">
+                                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                                        <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                                    </svg>
+                                    Cola de Imágenes (<span id="batchCount">0</span>)
+                                </h3>
+                                <div class="batch-queue" id="batchQueue"></div>
+                                <div class="batch-progress hidden" id="batchProgress">
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" id="progressFill"></div>
+                                    </div>
+                                    <p class="progress-text" id="progressText">Procesando: 0/0</p>
+                                </div>
+                            </div>
+                    </aside>
+
+
+                    <!-- Right Panel - Preview -->
+                    <div class="preview-panel">
+                        <div class="preview-header">
+                            <h3 class="preview-title">Vista Previa</h3>
+                            <div class="image-info" id="imageInfo"></div>
+                        </div>
+                        <div class="preview-container" id="previewContainer">
+                            <canvas id="canvas"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
