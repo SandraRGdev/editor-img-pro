@@ -626,68 +626,78 @@ function scheduleCanvasUpdate() {
 }
 
 function drawBatchCanvas() {
-    if (state.batchImages.length === 0) {
-        // Clear canvas or show placeholder
-        elements.canvas.width = 800;
-        elements.canvas.height = 400;
-        elements.ctx.clearRect(0, 0, 800, 400);
-        elements.ctx.fillStyle = '#333';
-        elements.ctx.font = '20px Inter';
-        elements.ctx.textAlign = 'center';
-        elements.ctx.fillText('Arrastra imágenes aquí para empezar', 400, 200);
-        return;
-    }
+    try {
+        if (state.batchImages.length === 0) {
+            // Clear canvas or show placeholder
+            elements.canvas.width = 800;
+            elements.canvas.height = 400;
+            elements.ctx.clearRect(0, 0, 800, 400);
+            elements.ctx.fillStyle = '#333';
+            elements.ctx.font = '20px Inter';
+            elements.ctx.textAlign = 'center';
+            elements.ctx.fillText('Arrastra imágenes aquí para empezar', 400, 200);
+            return;
+        }
 
-    const layout = calculateBatchLayout();
+        const layout = calculateBatchLayout();
 
-    // Calculate total canvas size needed
-    let maxWidth = 0;
-    let maxHeight = 0;
+        // Calculate total canvas size needed
+        let maxWidth = 0;
+        let maxHeight = 0;
 
-    layout.forEach(pos => {
-        maxWidth = Math.max(maxWidth, pos.x + pos.width);
-        maxHeight = Math.max(maxHeight, pos.y + pos.height);
-    });
+        layout.forEach(pos => {
+            maxWidth = Math.max(maxWidth, pos.x + pos.width);
+            maxHeight = Math.max(maxHeight, pos.y + pos.height);
+        });
 
-    // Add padding
-    maxWidth += state.spacing;
-    maxHeight += state.spacing;
+        // Add padding
+        maxWidth += state.spacing;
+        maxHeight += state.spacing;
 
-    // Limit canvas size to prevent browser crashes
-    // If canvas would be too large, scale down the layout
-    let scaleFactor = 1;
-    if (maxWidth > state.maxCanvasSize || maxHeight > state.maxCanvasSize) {
-        scaleFactor = Math.min(
-            state.maxCanvasSize / maxWidth,
-            state.maxCanvasSize / maxHeight
-        );
-        maxWidth = Math.floor(maxWidth * scaleFactor);
-        maxHeight = Math.floor(maxHeight * scaleFactor);
-    }
+        console.log(`Canvas size: ${maxWidth}x${maxHeight}, images: ${state.batchImages.length}`);
 
-    elements.canvas.width = maxWidth;
-    elements.canvas.height = maxHeight;
+        // Limit canvas size to prevent browser crashes
+        // If canvas would be too large, scale down the layout
+        let scaleFactor = 1;
+        if (maxWidth > state.maxCanvasSize || maxHeight > state.maxCanvasSize) {
+            scaleFactor = Math.min(
+                state.maxCanvasSize / maxWidth,
+                state.maxCanvasSize / maxHeight
+            );
+            maxWidth = Math.floor(maxWidth * scaleFactor);
+            maxHeight = Math.floor(maxHeight * scaleFactor);
+            console.log(`Canvas scaled to: ${maxWidth}x${maxHeight} (${Math.round(scaleFactor * 100)}%)`);
+        }
 
-    // Clear
-    elements.ctx.fillStyle = '#1a1a1a'; // Dark background for batch canvas
-    elements.ctx.fillRect(0, 0, maxWidth, maxHeight);
+        elements.canvas.width = maxWidth;
+        elements.canvas.height = maxHeight;
 
-    // Show info message if canvas is scaled
-    if (scaleFactor < 1) {
-        elements.ctx.fillStyle = '#8b5cf6';
-        elements.ctx.font = '14px Inter';
-        elements.ctx.textAlign = 'center';
-        elements.ctx.fillText(
-            `Preview escalado (${Math.round(scaleFactor * 100)}%) - El procesamiento usa resolución completa`,
-            maxWidth / 2,
-            20
-        );
-    }
+        // Clear
+        elements.ctx.fillStyle = '#1a1a1a'; // Dark background for batch canvas
+        elements.ctx.fillRect(0, 0, maxWidth, maxHeight);
 
-    // Draw images
-    layout.forEach((pos, index) => {
-        const imgData = state.batchImages[index];
-        const img = imgData.image;
+        // Show info message if canvas is scaled
+        if (scaleFactor < 1) {
+            elements.ctx.fillStyle = '#8b5cf6';
+            elements.ctx.font = '14px Inter';
+            elements.ctx.textAlign = 'center';
+            elements.ctx.fillText(
+                `Preview escalado (${Math.round(scaleFactor * 100)}%) - El procesamiento usa resolución completa`,
+                maxWidth / 2,
+                20
+            );
+        }
+
+        // Draw images
+        layout.forEach((pos, index) => {
+            const imgData = state.batchImages[index];
+            const img = imgData.image;
+
+            // Skip if image is not loaded
+            if (!img || !img.complete || img.width === 0 || img.height === 0) {
+                console.warn(`Image ${index} not loaded, skipping`);
+                return;
+            }
 
         // Apply scale factor if canvas was scaled down
         const scaledX = Math.floor(pos.x * scaleFactor);
@@ -753,6 +763,18 @@ function drawBatchCanvas() {
             elements.ctx.strokeRect(scaledX, scaledY, targetWidth, targetHeight);
         }
     });
+    } catch (error) {
+        console.error('Error in drawBatchCanvas:', error);
+        // Show error on canvas
+        elements.canvas.width = 800;
+        elements.canvas.height = 400;
+        elements.ctx.fillStyle = '#1a1a1a';
+        elements.ctx.fillRect(0, 0, 800, 400);
+        elements.ctx.fillStyle = '#ef4444';
+        elements.ctx.font = '16px Inter';
+        elements.ctx.textAlign = 'center';
+        elements.ctx.fillText('Error al dibujar canvas. Verifica la consola.', 400, 200);
+    }
 }
 
 
@@ -785,8 +807,8 @@ function updateFileSizeEstimate() {
         tempCanvas.height = imgData.height;
         const tempCtx = tempCanvas.getContext('2d');
 
-        // Draw the image with its settings - use original image if available
-        const img = imgData.originalImage || imgData.image;
+        // For preview, use thumbnail since we don't keep original in memory
+        const img = imgData.image;
         const targetWidth = imgData.width;
         const targetHeight = imgData.height;
         const imgAspect = img.width / img.height;
@@ -1692,70 +1714,90 @@ function calculateBatchLayout() {
 
 function addToBatchQueue(file) {
     const reader = new FileReader();
+    reader.onerror = (err) => {
+        console.error('Error reading file:', file.name, err);
+    };
+
     reader.onload = (e) => {
         const img = new Image();
+        img.onerror = (err) => {
+            console.error('Error loading image:', file.name, err);
+        };
+
         img.onload = () => {
-            // Create a thumbnail for preview to save memory
-            const thumbnailCanvas = document.createElement('canvas');
-            const maxSize = state.maxThumbSize; // Use state config (150px for memory efficiency)
-            let thumbWidth = img.width;
-            let thumbHeight = img.height;
+            try {
+                console.log(`Processing image: ${file.name}, size: ${img.width}x${img.height}, total images: ${state.batchImages.length + 1}`);
 
-            // Scale down if image is too large
-            if (thumbWidth > maxSize || thumbHeight > maxSize) {
-                const aspect = thumbWidth / thumbHeight;
-                if (thumbWidth > thumbHeight) {
-                    thumbWidth = maxSize;
-                    thumbHeight = maxSize / aspect;
-                } else {
-                    thumbHeight = maxSize;
-                    thumbWidth = maxSize * aspect;
+                // Create a thumbnail for preview to save memory
+                const thumbnailCanvas = document.createElement('canvas');
+                const maxSize = state.maxThumbSize; // 120px for memory efficiency
+                let thumbWidth = img.width;
+                let thumbHeight = img.height;
+
+                // Scale down if image is too large
+                if (thumbWidth > maxSize || thumbHeight > maxSize) {
+                    const aspect = thumbWidth / thumbHeight;
+                    if (thumbWidth > thumbHeight) {
+                        thumbWidth = maxSize;
+                        thumbHeight = maxSize / aspect;
+                    } else {
+                        thumbHeight = maxSize;
+                        thumbWidth = maxSize * aspect;
+                    }
                 }
+
+                thumbnailCanvas.width = thumbWidth;
+                thumbnailCanvas.height = thumbHeight;
+                const thumbCtx = thumbnailCanvas.getContext('2d');
+                thumbCtx.drawImage(img, 0, 0, thumbWidth, thumbHeight);
+
+                const thumbnailImg = new Image();
+                thumbnailImg.onerror = (err) => {
+                    console.error('Error loading thumbnail:', file.name, err);
+                };
+
+                thumbnailImg.onload = () => {
+                    const isFirstImage = state.batchImages.length === 0;
+
+                    state.batchImages.push({
+                        file: file,
+                        name: file.name.replace(/\.[^/.]+$/, ''),
+                        image: thumbnailImg, // Use thumbnail for preview
+                        // Don't keep originalImage in memory to save RAM
+                        // Will re-load from file when processing
+                        // Por defecto, usar el tamaño original de la imagen
+                        width: img.width,
+                        height: img.height,
+                        originalWidth: img.width,
+                        originalHeight: img.height,
+                        quality: state.quality,
+                        maintainAspect: state.maintainAspect,
+                        focusX: 0.5,
+                        focusY: 0.5,
+                        processed: false
+                    });
+
+                    // Clear the original image from memory since we have the thumbnail
+                    img.src = '';
+
+                    // Update the batch queue UI
+                    updateBatchQueueUIOnly();
+
+                    // For first image, select it
+                    if (isFirstImage) {
+                        state.selectedImageIndex = 0;
+                        updateBatchControls();
+                    }
+
+                    // Schedule canvas update (uses debounce to avoid freezing)
+                    scheduleCanvasUpdate();
+
+                    console.log(`Image added to queue. Total: ${state.batchImages.length}`);
+                };
+                thumbnailImg.src = thumbnailCanvas.toDataURL('image/jpeg', 0.8);
+            } catch (error) {
+                console.error('Error processing image:', file.name, error);
             }
-
-            thumbnailCanvas.width = thumbWidth;
-            thumbnailCanvas.height = thumbHeight;
-            const thumbCtx = thumbnailCanvas.getContext('2d');
-            thumbCtx.drawImage(img, 0, 0, thumbWidth, thumbHeight);
-
-            const thumbnailImg = new Image();
-            thumbnailImg.onload = () => {
-                const isFirstImage = state.batchImages.length === 0;
-
-                state.batchImages.push({
-                    file: file,
-                    name: file.name.replace(/\.[^/.]+$/, ''),
-                    image: thumbnailImg, // Use thumbnail for preview
-                    // Don't keep originalImage in memory to save RAM
-                    // Will re-load from file when processing
-                    // Por defecto, usar el tamaño original de la imagen
-                    width: img.width,
-                    height: img.height,
-                    originalWidth: img.width,
-                    originalHeight: img.height,
-                    quality: state.quality,
-                    maintainAspect: state.maintainAspect,
-                    focusX: 0.5,
-                    focusY: 0.5,
-                    processed: false
-                });
-
-                // Clear the original image from memory since we have the thumbnail
-                img.src = '';
-
-                // Update the batch queue UI
-                updateBatchQueueUIOnly();
-
-                // For first image, select it
-                if (isFirstImage) {
-                    state.selectedImageIndex = 0;
-                    updateBatchControls();
-                }
-
-                // Schedule canvas update (uses debounce to avoid freezing)
-                scheduleCanvasUpdate();
-            };
-            thumbnailImg.src = thumbnailCanvas.toDataURL('image/jpeg', 0.8);
         };
         img.src = e.target.result;
     };
