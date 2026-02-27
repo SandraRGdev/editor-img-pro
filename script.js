@@ -1615,38 +1615,19 @@ function calculateBatchLayout() {
     const count = state.batchImages.length;
     if (count === 0) return [];
 
-    // For preview, use smaller dimensions when there are many images
-    // to prevent canvas size issues
-    const useThumbnails = count > 12;
-    const maxThumbSize = useThumbnails ? state.thumbnailSize : Infinity;
-
-    // Simple grid: try to make a square-ish grid
+    // ALWAYS use the actual thumbnail dimensions for preview layout
+    // This prevents canvas from becoming too large
     const cols = Math.ceil(Math.sqrt(count));
-
     const positions = [];
     let currentX = state.spacing;
     let currentY = state.spacing;
     let currentRowHeight = 0;
 
     for (let i = 0; i < count; i++) {
-        const img = state.batchImages[i];
-        let w = img.width;
-        let h = img.height;
-
-        // Scale down for preview if using thumbnails
-        if (useThumbnails) {
-            const aspect = w / h;
-            if (w > h) {
-                w = Math.min(w, maxThumbSize);
-                h = w / aspect;
-            } else {
-                h = Math.min(h, maxThumbSize);
-                w = h * aspect;
-            }
-            // Round to integers
-            w = Math.round(w);
-            h = Math.round(h);
-        }
+        const imgData = state.batchImages[i];
+        // Use the actual thumbnail image dimensions
+        let w = imgData.image.width;
+        let h = imgData.image.height;
 
         // Grid position
         const col = i % cols;
@@ -1662,8 +1643,8 @@ function calculateBatchLayout() {
             y: currentY,
             width: w,
             height: h,
-            originalWidth: img.width,
-            originalHeight: img.height
+            originalWidth: imgData.originalWidth || imgData.width,
+            originalHeight: imgData.originalHeight || imgData.height
         });
 
         currentX += w + state.spacing;
