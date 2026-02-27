@@ -628,6 +628,8 @@ function scheduleCanvasUpdate() {
 
 function drawBatchCanvas() {
     try {
+        console.log(`drawBatchCanvas called: images=${state.batchImages.length}, selected=${state.selectedImageIndex}`);
+
         if (state.batchImages.length === 0) {
             // Clear canvas or show placeholder
             elements.canvas.width = 800;
@@ -647,6 +649,14 @@ function drawBatchCanvas() {
         const imgData = state.batchImages[selectedIndex];
         const img = imgData?.image;
 
+        console.log(`Selected image ${selectedIndex}:`, {
+            hasImg: !!img,
+            complete: img?.complete,
+            width: img?.width,
+            height: img?.height,
+            src: img?.src?.substring(0, 50) + '...'
+        });
+
         if (!img || !img.complete || img.width === 0 || img.height === 0) {
             // Image not ready, show placeholder
             elements.canvas.width = 400;
@@ -657,6 +667,7 @@ function drawBatchCanvas() {
             elements.ctx.font = '16px Inter';
             elements.ctx.textAlign = 'center';
             elements.ctx.fillText('Cargando imagen...', 200, 150);
+            console.warn('Image not ready, showing placeholder');
             return;
         }
 
@@ -668,6 +679,8 @@ function drawBatchCanvas() {
         const displaySize = 300;
         elements.canvas.width = displaySize + 40;
         elements.canvas.height = displaySize + 80;
+
+        console.log(`Canvas size: ${elements.canvas.width}x${elements.canvas.height}`);
 
         // Clear
         elements.ctx.fillStyle = '#1a1a1a';
@@ -693,6 +706,8 @@ function drawBatchCanvas() {
 
         // Draw image
         elements.ctx.drawImage(img, x, y, displaySize, displaySize);
+
+        console.log(`Successfully drew image at (${x}, ${y}) size ${displaySize}`);
 
         // Draw selection indicator
         elements.ctx.fillStyle = '#8b5cf6';
