@@ -25,7 +25,8 @@ const state = {
     // Canvas size limits (to prevent browser crashes)
     maxCanvasSize: 16384, // Maximum canvas dimension (safe limit)
     previewScale: 0.1, // Scale factor for preview when many images
-    thumbnailSize: 200 // Size for thumbnails in preview
+    thumbnailSize: 200, // Size for thumbnails in preview
+    pendingCanvasUpdate: false // Prevent multiple canvas updates
 };
 
 // ===== DOM Elements =====
@@ -356,8 +357,11 @@ function handleDimensionChange(e) {
 
         if (!value || value <= 0) return;
 
+        // Use original image for aspect ratio if available
+        const sourceImage = imgData.originalImage || imgData.image;
+
         if (imgData.maintainAspect) {
-            const aspectRatio = imgData.image.width / imgData.image.height;
+            const aspectRatio = sourceImage.width / sourceImage.height;
             if (isWidth) {
                 imgData.width = value;
                 imgData.height = Math.round(value / aspectRatio);
@@ -430,8 +434,11 @@ async function processBatchImages() {
         elements.progressFill.style.width = `${percent}%`;
         elements.progressText.textContent = `Procesando ${i + 1} de ${state.batchImages.length}`;
 
+        // Use original image for processing if available, otherwise use thumbnail
+        const imgToProcess = item.originalImage || item.image;
+
         // Process image using its INDIVIDUAL settings
-        const blob = await processSingleImage(item.image, {
+        const blob = await processSingleImage(imgToProcess, {
             width: item.width,
             height: item.height,
             quality: item.quality,
@@ -742,8 +749,8 @@ function updateFileSizeEstimate() {
         tempCanvas.height = imgData.height;
         const tempCtx = tempCanvas.getContext('2d');
 
-        // Draw the image with its settings
-        const img = imgData.image;
+        // Draw the image with its settings - use original image if available
+        const img = imgData.originalImage || imgData.image;
         const targetWidth = imgData.width;
         const targetHeight = imgData.height;
         const imgAspect = img.width / img.height;
@@ -1241,7 +1248,7 @@ function reset() {
 
 
 
-function updateBatchQueueUI() {
+function updateBatchQueueUIOnly() {
     elements.batchQueue.innerHTML = '';
     elements.batchCount.textContent = state.batchImages.length;
 
@@ -1275,6 +1282,16 @@ function updateBatchQueueUI() {
 
         elements.batchQueue.appendChild(batchItem);
     });
+
+    // Show editor section if we have images
+    if (state.batchImages.length > 0) {
+        elements.uploadSection.classList.add('hidden');
+        elements.editorSection.classList.remove('hidden');
+    }
+}
+
+function updateBatchQueueUI() {
+    updateBatchQueueUIOnly();
 
     // Show editor section if we have images
     if (state.batchImages.length > 0) {
@@ -1438,8 +1455,11 @@ async function processAndDownloadSelected() {
     elements.processSelectedBtn.textContent = 'Procesando...';
 
     try {
+        // Use original image for processing if available, otherwise use thumbnail
+        const imgToProcess = item.originalImage || item.image;
+
         // Process the single image
-        const blob = await processSingleImage(item.image, {
+        const blob = await processSingleImage(imgToProcess, {
             width: item.width,
             height: item.height,
             quality: item.quality,
@@ -1658,22 +1678,71 @@ function addToBatchQueue(file) {
     reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
-            state.batchImages.push({
-                file: file,
-                name: file.name.replace(/\.[^/.]+$/, ''),
-                image: img,
-                // Por defecto, usar el tamaño original de la imagen
-                width: img.width,
-                height: img.height,
-                quality: state.quality,
-                maintainAspect: state.maintainAspect,
-                focusX: 0.5,
-                focusY: 0.5,
-                processed: false
-            });
+            // Create a thumbnail for preview to save memory
+            const thumbnailCanvas = document.createElement('canvas');
+            const maxSize = 400; // Reduced from 800 to 400 for better performance
+            let thumbWidth = img.width;
+            let thumbHeight = img.height;
 
-            // Update the batch queue UI to show the new image
-            updateBatchQueueUI();
+            // Scale down if image is too large
+            if (thumbWidth > maxSize || thumbHeight > maxSize) {
+                const aspect = thumbWidth / thumbHeight;
+                if (thumbWidth > thumbHeight) {
+                    thumbWidth = maxSize;
+                    thumbHeight = maxSize / aspect;
+                } else {
+                    thumbHeight = maxSize;
+                    thumbWidth = maxSize * aspect;
+                }
+            }
+
+            thumbnailCanvas.width = thumbWidth;
+            thumbnailCanvas.height = thumbHeight;
+            const thumbCtx = thumbnailCanvas.getContext('2d');
+            thumbCtx.drawImage(img, 0, 0, thumbWidth, thumbHeight);
+
+            const thumbnailImg = new Image();
+            thumbnailImg.onload = () => {
+                const isFirstImage = state.batchImages.length === 0;
+
+                state.batchImages.push({
+                    file: file,
+                    name: file.name.replace(/\.[^/.]+$/, ''),
+                    image: thumbnailImg, // Use thumbnail for preview
+                    originalImage: img, // Keep original for processing
+                    // Por defecto, usar el tamaño original de la imagen
+                    width: img.width,
+                    height: img.height,
+                    originalWidth: img.width,
+                    originalHeight: img.height,
+                    quality: state.quality,
+                    maintainAspect: state.maintainAspect,
+                    focusX: 0.5,
+                    focusY: 0.5,
+                    processed: false
+                });
+
+                // Update the batch queue UI (but don't redraw canvas yet)
+                updateBatchQueueUIOnly();
+
+                // For first image, select it and update preview
+                if (isFirstImage) {
+                    state.selectedImageIndex = 0;
+                    updateBatchControls();
+                    // Delay canvas redraw to avoid freezing
+                    requestAnimationFrame(() => {
+                        updatePreview();
+                    });
+                } else if (!state.pendingCanvasUpdate) {
+                    // Delay canvas redraw to avoid freezing
+                    state.pendingCanvasUpdate = true;
+                    requestAnimationFrame(() => {
+                        updatePreview();
+                        state.pendingCanvasUpdate = false;
+                    });
+                }
+            };
+            thumbnailImg.src = thumbnailCanvas.toDataURL('image/jpeg', 0.8);
         };
         img.src = e.target.result;
     };
