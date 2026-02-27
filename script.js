@@ -640,15 +640,15 @@ function drawBatchCanvas() {
             return;
         }
 
-        // Get calculated layout with adaptive thumbnail sizes
+        // Get calculated layout
         const layout = calculateBatchLayout();
         const positions = layout.positions;
         let canvasWidth = layout.canvasWidth;
         let canvasHeight = layout.canvasHeight;
 
-        console.log(`Layout calculated: canvas=${canvasWidth}x${canvasHeight}, positions=${positions.length}`);
+        console.log(`Layout: canvas=${canvasWidth}x${canvasHeight}, positions=${positions.length}`);
 
-        // Ensure canvas doesn't exceed maximum size
+        // Scale down if canvas exceeds maximum size
         let scaleFactor = 1;
         if (canvasWidth > state.canvasMaxWidth || canvasHeight > state.canvasMaxHeight) {
             scaleFactor = Math.min(
@@ -664,56 +664,74 @@ function drawBatchCanvas() {
         elements.canvas.width = canvasWidth;
         elements.canvas.height = canvasHeight;
 
-        console.log(`Canvas set to ${canvasWidth}x${canvasHeight}`);
-
         // Clear with dark background
         elements.ctx.fillStyle = '#1a1a1a';
         elements.ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-        // Draw all images
-        let drawnCount = 0;
+        // Draw all images at their target size
         positions.forEach((pos, index) => {
             const imgData = state.batchImages[index];
             const img = imgData?.image;
 
             // Skip if image not ready
             if (!img || !img.complete || img.width === 0 || img.height === 0) {
-                console.warn(`Image ${index} not ready:`, { img: !!img, complete: img?.complete, w: img?.width, h: img?.height });
                 return;
             }
 
-            // Apply scale factor if needed
+            // Calculate scaled position and size
             const x = Math.floor(pos.x * scaleFactor);
             const y = Math.floor(pos.y * scaleFactor);
-            const size = Math.floor(pos.width * scaleFactor);
+            const targetWidth = Math.floor(pos.width * scaleFactor);
+            const targetHeight = Math.floor(pos.height * scaleFactor);
 
-            if (index < 3) {
-                console.log(`Drawing image ${index}: pos=${pos.x},${pos.y} size=${pos.width}, scaled=${x},${y} size=${size}, img=${img.width}x${img.height}`);
+            // Use thumbnail dimensions for aspect ratio (they match original ratio)
+            const imgAspect = img.width / img.height;
+            const targetAspect = targetWidth / targetHeight;
+
+            // Draw background
+            elements.ctx.fillStyle = '#2a2a2a';
+            elements.ctx.fillRect(x, y, targetWidth, targetHeight);
+
+            // Calculate draw params (cover mode - like object-fit: cover)
+            let drawWidth, drawHeight, offsetX, offsetY;
+
+            if (imgAspect > targetAspect) {
+                drawHeight = targetHeight;
+                drawWidth = targetHeight * imgAspect;
+                offsetX = (targetWidth - drawWidth) / 2;
+                offsetY = 0;
+            } else {
+                drawWidth = targetWidth;
+                drawHeight = targetWidth / imgAspect;
+                offsetX = 0;
+                offsetY = (targetHeight - drawHeight) / 2;
             }
 
-            // Draw background for thumbnail
-            elements.ctx.fillStyle = '#2a2a2a';
-            elements.ctx.fillRect(x, y, size, size);
+            // Clip to slot area
+            elements.ctx.save();
+            elements.ctx.beginPath();
+            elements.ctx.rect(x, y, targetWidth, targetHeight);
+            elements.ctx.clip();
 
-            // Draw thumbnail (scale from 150px to target size)
-            elements.ctx.drawImage(img, x, y, size, size);
+            // Draw image (thumbnail will be upscaled, but that's OK for preview)
+            elements.ctx.drawImage(img, x + offsetX, y + offsetY, drawWidth, drawHeight);
+
+            elements.ctx.restore();
 
             // Draw selection highlight
             if (index === state.selectedImageIndex) {
                 elements.ctx.strokeStyle = '#8b5cf6';
                 elements.ctx.lineWidth = 3;
-                elements.ctx.strokeRect(x, y, size, size);
+                elements.ctx.strokeRect(x, y, targetWidth, targetHeight);
             } else {
                 // Subtle border for non-selected
                 elements.ctx.strokeStyle = '#333';
                 elements.ctx.lineWidth = 1;
-                elements.ctx.strokeRect(x, y, size, size);
+                elements.ctx.strokeRect(x, y, targetWidth, targetHeight);
             }
-
-            drawnCount++;
         });
 
-        console.log(`Drew ${drawnCount}/${state.batchImages.length} images on ${canvasWidth}x${canvasHeight} canvas`);
+        console.log(`Drew ${state.batchImages.length} images on ${canvasWidth}x${canvasHeight} canvas`);
 
     } catch (error) {
         console.error('Error in drawBatchCanvas:', error);
@@ -1597,25 +1615,17 @@ function calculateBatchLayout() {
     const targetCanvasWidth = state.globalWidth || 800;
     const targetCanvasHeight = state.globalHeight || 800;
 
-    // Calculate thumbnail size based on image count and target canvas size
     // Calculate columns based on aspect ratio of target canvas
     const aspectRatio = targetCanvasWidth / targetCanvasHeight;
     const itemsPerRow = Math.ceil(Math.sqrt(count * aspectRatio));
     const cols = Math.max(1, itemsPerRow);
     const rows = Math.ceil(count / cols);
 
-    // Calculate thumbnail size to fit in the target canvas
-    const thumbSize = Math.min(
-        Math.floor((targetCanvasWidth - (cols + 1) * state.spacing) / cols),
-        Math.floor((targetCanvasHeight - (rows + 1) * state.spacing) / rows),
-        150 // Max thumbnail size
-    );
+    // Calculate size for each image slot
+    const slotWidth = Math.floor((targetCanvasWidth - (cols + 1) * state.spacing) / cols);
+    const slotHeight = Math.floor((targetCanvasHeight - (rows + 1) * state.spacing) / rows);
 
-    // Calculate actual canvas size (will match target as close as possible)
-    const canvasWidth = cols * thumbSize + (cols + 1) * state.spacing;
-    const canvasHeight = rows * thumbSize + (rows + 1) * state.spacing;
-
-    console.log(`Layout: ${count} images, target: ${targetCanvasWidth}x${targetCanvasHeight}, thumbSize: ${thumbSize}, cols: ${cols}, rows: ${rows}, canvas: ${canvasWidth}x${canvasHeight}`);
+    console.log(`Layout: ${count} images, target: ${targetCanvasWidth}x${targetCanvasHeight}, cols: ${cols}, rows: ${rows}, slot: ${slotWidth}x${slotHeight}`);
 
     const positions = [];
 
@@ -1624,17 +1634,22 @@ function calculateBatchLayout() {
         const row = Math.floor(i / cols);
         const col = i % cols;
 
+        // Each image gets its own slot with full dimensions
         positions.push({
-            x: state.spacing + col * (thumbSize + state.spacing),
-            y: state.spacing + row * (thumbSize + state.spacing),
-            width: thumbSize,
-            height: thumbSize,
+            x: state.spacing + col * (slotWidth + state.spacing),
+            y: state.spacing + row * (slotHeight + state.spacing),
+            width: slotWidth,
+            height: slotHeight,
             originalWidth: imgData.originalWidth || imgData.width,
             originalHeight: imgData.originalHeight || imgData.height
         });
     }
 
-    return { positions, canvasWidth, canvasHeight };
+    return {
+        positions,
+        canvasWidth: targetCanvasWidth,
+        canvasHeight: targetCanvasHeight
+    };
 }
 
 function addToBatchQueue(file) {
@@ -1653,34 +1668,32 @@ function addToBatchQueue(file) {
             try {
                 console.log(`Processing image: ${file.name}, size: ${img.width}x${img.height}, total images: ${state.batchImages.length + 1}`);
 
-                // Create a FIXED SQUARE thumbnail for preview (150px for quality)
-                // The canvas will scale them down as needed
+                // Create a thumbnail for preview - larger size for better quality
+                // Keep aspect ratio, don't crop to square
                 const thumbnailCanvas = document.createElement('canvas');
-                const thumbSize = 150; // Fixed 150px for good quality
+                const maxThumbSize = 800; // Larger thumbnails for better quality when scaled
 
-                thumbnailCanvas.width = thumbSize;
-                thumbnailCanvas.height = thumbSize;
-                const thumbCtx = thumbnailCanvas.getContext('2d');
+                let thumbWidth = img.width;
+                let thumbHeight = img.height;
 
-                // Calculate crop dimensions (center crop, like object-fit: cover)
-                const imgAspect = img.width / img.height;
-                let srcX, srcY, srcW, srcH;
-
-                if (imgAspect > 1) {
-                    // Horizontal image - crop sides
-                    srcH = img.height;
-                    srcW = img.height;
-                    srcX = (img.width - img.height) / 2;
-                    srcY = 0;
-                } else {
-                    // Vertical image - crop top/bottom
-                    srcW = img.width;
-                    srcH = img.width;
-                    srcX = 0;
-                    srcY = (img.height - img.width) / 2;
+                // Scale down if image is too large
+                if (thumbWidth > maxThumbSize || thumbHeight > maxThumbSize) {
+                    const aspect = thumbWidth / thumbHeight;
+                    if (thumbWidth > thumbHeight) {
+                        thumbWidth = maxThumbSize;
+                        thumbHeight = maxThumbSize / aspect;
+                    } else {
+                        thumbHeight = maxThumbSize;
+                        thumbWidth = maxThumbSize * aspect;
+                    }
                 }
 
-                thumbCtx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, thumbSize, thumbSize);
+                thumbnailCanvas.width = thumbWidth;
+                thumbnailCanvas.height = thumbHeight;
+                const thumbCtx = thumbnailCanvas.getContext('2d');
+
+                // Draw full image (maintaining aspect ratio)
+                thumbCtx.drawImage(img, 0, 0, thumbWidth, thumbHeight);
 
                 const thumbnailImg = new Image();
                 thumbnailImg.onerror = (err) => {
