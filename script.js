@@ -361,11 +361,10 @@ function handleDimensionChange(e) {
 
         if (!value || value <= 0) return;
 
-        // Use original image for aspect ratio if available
-        const sourceImage = imgData.originalImage || imgData.image;
+        // Use original dimensions for aspect ratio (we saved them, not the image)
+        const aspectRatio = imgData.originalWidth / imgData.originalHeight;
 
         if (imgData.maintainAspect) {
-            const aspectRatio = sourceImage.width / sourceImage.height;
             if (isWidth) {
                 imgData.width = value;
                 imgData.height = Math.round(value / aspectRatio);
@@ -740,52 +739,22 @@ function updateFileSizeEstimate() {
 
     elements.estimateValue.textContent = 'Calculando...';
 
-    // For batch mode with selected image, create a temporary canvas
+    // For batch mode with selected image, estimate size based on thumbnail
     if (state.batchMode && state.selectedImageIndex !== -1) {
         const imgData = state.batchImages[state.selectedImageIndex];
+
+        // Create a small canvas for size estimation (use thumbnail to avoid memory issues)
+        const scale = Math.min(300 / imgData.width, 300 / imgData.height, 1);
+        const estimateWidth = Math.round(imgData.width * scale);
+        const estimateHeight = Math.round(imgData.height * scale);
+
         const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = imgData.width;
-        tempCanvas.height = imgData.height;
+        tempCanvas.width = estimateWidth;
+        tempCanvas.height = estimateHeight;
         const tempCtx = tempCanvas.getContext('2d');
 
-        // For preview, use thumbnail since we don't keep original in memory
-        const img = imgData.image;
-        const targetWidth = imgData.width;
-        const targetHeight = imgData.height;
-        const imgAspect = img.width / img.height;
-        const targetAspect = targetWidth / targetHeight;
-
-        let drawWidth, drawHeight, offsetX, offsetY;
-
-        if (imgData.maintainAspect) {
-            if (imgAspect > targetAspect) {
-                drawWidth = targetWidth;
-                drawHeight = targetWidth / imgAspect;
-                offsetX = 0;
-                offsetY = (targetHeight - drawHeight) / 2;
-            } else {
-                drawHeight = targetHeight;
-                drawWidth = targetHeight * imgAspect;
-                offsetX = (targetWidth - drawWidth) / 2;
-                offsetY = 0;
-            }
-        } else {
-            if (imgAspect > targetAspect) {
-                drawHeight = targetHeight;
-                drawWidth = targetHeight * imgAspect;
-                const maxOffset = drawWidth - targetWidth;
-                offsetX = -(maxOffset * imgData.focusX);
-                offsetY = 0;
-            } else {
-                drawWidth = targetWidth;
-                drawHeight = targetWidth / imgAspect;
-                const maxOffset = drawHeight - targetHeight;
-                offsetY = -(maxOffset * imgData.focusY);
-                offsetX = 0;
-            }
-        }
-
-        tempCtx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+        // Draw thumbnail scaled to estimate size
+        tempCtx.drawImage(imgData.image, 0, 0, estimateWidth, estimateHeight);
 
         const mimeType = `image/${state.format}`;
         const quality = imgData.quality / 100;
