@@ -23,11 +23,12 @@ const state = {
     spacing: 20,
     selectedImageIndex: -1, // -1 means no selection (global mode)
     // Canvas size limits (to prevent browser crashes)
-    maxCanvasSize: 16384, // Maximum canvas dimension (safe limit)
+    maxCanvasSize: 8192, // Maximum canvas dimension (reduced for safety)
     previewScale: 0.1, // Scale factor for preview when many images
     thumbnailSize: 200, // Size for thumbnails in preview
-    pendingCanvasUpdate: false, // Prevent multiple canvas updates
-    maxThumbSize: 150 // Maximum thumbnail size for preview (reduced from 400)
+    canvasRafId: null, // RequestAnimationFrame ID for debouncing
+    maxThumbSize: 120, // Maximum thumbnail size for preview (reduced for memory)
+    updateScheduled: false // Flag for update scheduling
 };
 
 // ===== DOM Elements =====
@@ -419,6 +420,21 @@ function handleDimensionChange(e) {
     updateFileSizeEstimate();
 }
 
+// Helper function to load an image from a File object
+function loadImageFromFile(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = reject;
+            img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
 async function processBatchImages() {
     if (state.batchImages.length === 0) return;
 
@@ -435,8 +451,9 @@ async function processBatchImages() {
         elements.progressFill.style.width = `${percent}%`;
         elements.progressText.textContent = `Procesando ${i + 1} de ${state.batchImages.length}`;
 
-        // Use original image for processing if available, otherwise use thumbnail
-        const imgToProcess = item.originalImage || item.image;
+        // Load the original image from file for processing
+        // This saves memory by not keeping all originals in memory
+        const imgToProcess = await loadImageFromFile(item.file);
 
         // Process image using its INDIVIDUAL settings
         const blob = await processSingleImage(imgToProcess, {
@@ -455,6 +472,9 @@ async function processBatchImages() {
         });
 
         item.processed = true;
+
+        // Clear the loaded image from memory
+        imgToProcess.src = '';
     }
 
     elements.processBatchBtn.disabled = false;
@@ -588,6 +608,21 @@ function updatePreview() {
     elements.ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
 
     updateImageInfo();
+}
+
+// Schedule canvas update with proper debounce
+// Cancels previous pending update and schedules a new one
+function scheduleCanvasUpdate() {
+    // Cancel any pending animation frame
+    if (state.canvasRafId) {
+        cancelAnimationFrame(state.canvasRafId);
+    }
+
+    // Schedule a new update
+    state.canvasRafId = requestAnimationFrame(() => {
+        updatePreview();
+        state.canvasRafId = null;
+    });
 }
 
 function drawBatchCanvas() {
@@ -1691,7 +1726,8 @@ function addToBatchQueue(file) {
                     file: file,
                     name: file.name.replace(/\.[^/.]+$/, ''),
                     image: thumbnailImg, // Use thumbnail for preview
-                    originalImage: img, // Keep original for processing
+                    // Don't keep originalImage in memory to save RAM
+                    // Will re-load from file when processing
                     // Por defecto, usar el tamaño original de la imagen
                     width: img.width,
                     height: img.height,
@@ -1704,25 +1740,20 @@ function addToBatchQueue(file) {
                     processed: false
                 });
 
-                // Update the batch queue UI (but don't redraw canvas yet)
+                // Clear the original image from memory since we have the thumbnail
+                img.src = '';
+
+                // Update the batch queue UI
                 updateBatchQueueUIOnly();
 
-                // For first image, select it and update preview
+                // For first image, select it
                 if (isFirstImage) {
                     state.selectedImageIndex = 0;
                     updateBatchControls();
-                    // Delay canvas redraw to avoid freezing
-                    requestAnimationFrame(() => {
-                        updatePreview();
-                    });
-                } else if (!state.pendingCanvasUpdate) {
-                    // Delay canvas redraw to avoid freezing
-                    state.pendingCanvasUpdate = true;
-                    requestAnimationFrame(() => {
-                        updatePreview();
-                        state.pendingCanvasUpdate = false;
-                    });
                 }
+
+                // Schedule canvas update (uses debounce to avoid freezing)
+                scheduleCanvasUpdate();
             };
             thumbnailImg.src = thumbnailCanvas.toDataURL('image/jpeg', 0.8);
         };
