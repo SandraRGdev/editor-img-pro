@@ -23,13 +23,11 @@ const state = {
     spacing: 20,
     selectedImageIndex: -1, // -1 means no selection (global mode)
     // Canvas size limits (to prevent browser crashes)
-    maxCanvasSize: 4096, // Maximum canvas dimension (very conservative)
-    previewScale: 0.1, // Scale factor for preview when many images
-    thumbnailSize: 200, // Size for thumbnails in preview
+    canvasMaxWidth: 2048, // Fixed canvas width
+    canvasMaxHeight: 2048, // Fixed canvas height
+    spacing: 10, // Spacing between thumbnails
     canvasRafId: null, // RequestAnimationFrame ID for debouncing
-    thumbSize: 80, // Fixed thumbnail size for preview (square)
-    maxThumbDisplayWidth: 100, // Max width for thumbnail display
-    gridCols: 6, // Fixed number of columns for grid
+    thumbSize: 150, // Default thumbnail size (will be adjusted dynamically)
     updateScheduled: false // Flag for update scheduling
 };
 
@@ -628,8 +626,6 @@ function scheduleCanvasUpdate() {
 
 function drawBatchCanvas() {
     try {
-        console.log(`drawBatchCanvas called: images=${state.batchImages.length}, selected=${state.selectedImageIndex}`);
-
         if (state.batchImages.length === 0) {
             // Clear canvas or show placeholder
             elements.canvas.width = 800;
@@ -642,79 +638,68 @@ function drawBatchCanvas() {
             return;
         }
 
-        // NEW APPROACH: Draw only selected image, not all images
-        // This prevents canvas from becoming too large
+        // Get calculated layout with adaptive thumbnail sizes
+        const layout = calculateBatchLayout();
+        const positions = layout.positions;
+        let canvasWidth = layout.canvasWidth;
+        let canvasHeight = layout.canvasHeight;
 
-        const selectedIndex = state.selectedImageIndex >= 0 ? state.selectedImageIndex : 0;
-        const imgData = state.batchImages[selectedIndex];
-        const img = imgData?.image;
-
-        console.log(`Selected image ${selectedIndex}:`, {
-            hasImg: !!img,
-            complete: img?.complete,
-            width: img?.width,
-            height: img?.height,
-            src: img?.src?.substring(0, 50) + '...'
-        });
-
-        if (!img || !img.complete || img.width === 0 || img.height === 0) {
-            // Image not ready, show placeholder
-            elements.canvas.width = 400;
-            elements.canvas.height = 300;
-            elements.ctx.fillStyle = '#1a1a1a';
-            elements.ctx.fillRect(0, 0, 400, 300);
-            elements.ctx.fillStyle = '#888';
-            elements.ctx.font = '16px Inter';
-            elements.ctx.textAlign = 'center';
-            elements.ctx.fillText('Cargando imagen...', 200, 150);
-            console.warn('Image not ready, showing placeholder');
-            return;
+        // Ensure canvas doesn't exceed maximum size
+        let scaleFactor = 1;
+        if (canvasWidth > state.canvasMaxWidth || canvasHeight > state.canvasMaxHeight) {
+            scaleFactor = Math.min(
+                state.canvasMaxWidth / canvasWidth,
+                state.canvasMaxHeight / canvasHeight
+            );
+            canvasWidth = Math.floor(canvasWidth * scaleFactor);
+            canvasHeight = Math.floor(canvasHeight * scaleFactor);
+            console.log(`Canvas scaled to ${canvasWidth}x${canvasHeight}`);
         }
 
-        // Display info text
-        const infoText = `Imagen ${selectedIndex + 1} de ${state.batchImages.length}`;
-        const nameText = imgData.name || 'Imagen';
+        // Set canvas size
+        elements.canvas.width = canvasWidth;
+        elements.canvas.height = canvasHeight;
 
-        // Set canvas to show thumbnail nicely centered
-        const displaySize = 300;
-        elements.canvas.width = displaySize + 40;
-        elements.canvas.height = displaySize + 80;
-
-        console.log(`Canvas size: ${elements.canvas.width}x${elements.canvas.height}`);
-
-        // Clear
+        // Clear with dark background
         elements.ctx.fillStyle = '#1a1a1a';
-        elements.ctx.fillRect(0, 0, elements.canvas.width, elements.canvas.height);
+        elements.ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-        // Draw info text at top
-        elements.ctx.fillStyle = '#8b5cf6';
-        elements.ctx.font = '14px Inter';
-        elements.ctx.textAlign = 'center';
-        elements.ctx.fillText(infoText, elements.canvas.width / 2, 20);
-        elements.ctx.fillStyle = '#fff';
-        elements.ctx.font = '12px Inter';
-        elements.ctx.fillText(nameText, elements.canvas.width / 2, 40);
+        // Draw all images
+        positions.forEach((pos, index) => {
+            const imgData = state.batchImages[index];
+            const img = imgData?.image;
 
-        // Draw thumbnail centered
-        const x = (elements.canvas.width - displaySize) / 2;
-        const y = 50;
+            // Skip if image not ready
+            if (!img || !img.complete || img.width === 0 || img.height === 0) {
+                return;
+            }
 
-        // Draw border
-        elements.ctx.strokeStyle = '#333';
-        elements.ctx.lineWidth = 2;
-        elements.ctx.strokeRect(x - 2, y - 2, displaySize + 4, displaySize + 4);
+            // Apply scale factor if needed
+            const x = Math.floor(pos.x * scaleFactor);
+            const y = Math.floor(pos.y * scaleFactor);
+            const size = Math.floor(pos.width * scaleFactor);
 
-        // Draw image
-        elements.ctx.drawImage(img, x, y, displaySize, displaySize);
+            // Draw background for thumbnail
+            elements.ctx.fillStyle = '#2a2a2a';
+            elements.ctx.fillRect(x, y, size, size);
 
-        console.log(`Successfully drew image at (${x}, ${y}) size ${displaySize}`);
+            // Draw thumbnail
+            elements.ctx.drawImage(img, x, y, size, size);
 
-        // Draw selection indicator
-        elements.ctx.fillStyle = '#8b5cf6';
-        elements.ctx.font = '12px Inter';
-        elements.ctx.fillText('✓ Seleccionada', elements.canvas.width / 2, elements.canvas.height - 10);
+            // Draw selection highlight
+            if (index === state.selectedImageIndex) {
+                elements.ctx.strokeStyle = '#8b5cf6';
+                elements.ctx.lineWidth = 3;
+                elements.ctx.strokeRect(x, y, size, size);
+            } else {
+                // Subtle border for non-selected
+                elements.ctx.strokeStyle = '#333';
+                elements.ctx.lineWidth = 1;
+                elements.ctx.strokeRect(x, y, size, size);
+            }
+        });
 
-        console.log(`Drew image ${selectedIndex + 1}/${state.batchImages.length}: ${nameText}`);
+        console.log(`Drew ${state.batchImages.length} images on ${canvasWidth}x${canvasHeight} canvas`);
 
     } catch (error) {
         console.error('Error in drawBatchCanvas:', error);
@@ -1598,10 +1583,32 @@ function calculateBatchLayout() {
     const count = state.batchImages.length;
     if (count === 0) return [];
 
-    // Use FIXED square thumbnails for predictable canvas size
-    // This prevents canvas from becoming too large
-    const thumbSize = state.thumbSize; // 80px square
-    const cols = state.gridCols; // Fixed 6 columns
+    // Calculate thumbnail size based on image count
+    // More images = smaller thumbnails to fit in fixed canvas
+    let thumbSize;
+    if (count <= 10) {
+        thumbSize = 150;
+    } else if (count <= 25) {
+        thumbSize = 120;
+    } else if (count <= 50) {
+        thumbSize = 100;
+    } else if (count <= 100) {
+        thumbSize = 80;
+    } else {
+        thumbSize = 60;
+    }
+
+    // Calculate optimal columns (try to make canvas roughly square)
+    const itemsPerRow = Math.ceil(Math.sqrt(count * (state.canvasMaxWidth / state.canvasMaxHeight)));
+    const cols = Math.max(1, Math.min(itemsPerRow, 20)); // Max 20 columns
+    const rows = Math.ceil(count / cols);
+
+    // Calculate total canvas size
+    const canvasWidth = cols * thumbSize + (cols + 1) * state.spacing;
+    const canvasHeight = rows * thumbSize + (rows + 1) * state.spacing;
+
+    console.log(`Layout: ${count} images, thumbSize: ${thumbSize}, cols: ${cols}, rows: ${rows}, canvas: ${canvasWidth}x${canvasHeight}`);
+
     const positions = [];
 
     for (let i = 0; i < count; i++) {
@@ -1619,7 +1626,7 @@ function calculateBatchLayout() {
         });
     }
 
-    return positions;
+    return { positions, canvasWidth, canvasHeight };
 }
 
 function addToBatchQueue(file) {
@@ -1638,10 +1645,10 @@ function addToBatchQueue(file) {
             try {
                 console.log(`Processing image: ${file.name}, size: ${img.width}x${img.height}, total images: ${state.batchImages.length + 1}`);
 
-                // Create a FIXED SQUARE thumbnail for preview to save memory
-                // This ensures predictable canvas size
+                // Create a FIXED SQUARE thumbnail for preview (150px for quality)
+                // The canvas will scale them down as needed
                 const thumbnailCanvas = document.createElement('canvas');
-                const thumbSize = state.thumbSize; // 80px square
+                const thumbSize = 150; // Fixed 150px for good quality
 
                 thumbnailCanvas.width = thumbSize;
                 thumbnailCanvas.height = thumbSize;
