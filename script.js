@@ -1510,11 +1510,9 @@ function handleGlobalLayoutChange(e) {
 
 function handleBatchCanvasClick(e) {
     const rect = elements.canvas.getBoundingClientRect();
-    // Calculate click position relative to the canvas element
-    // Note: If canvas is scaled via CSS (max-height), we need to map client coordinates to canvas coordinates.
-    // However, drawBatchCanvas sets canvas.width/height to the full grid size.
-    // If CSS constrains it, we need to account for that scale.
 
+    // Calculate click position relative to the canvas element
+    // Account for CSS scaling (if canvas is displayed smaller than its actual size)
     const scaleX = elements.canvas.width / rect.width;
     const scaleY = elements.canvas.height / rect.height;
 
@@ -1522,43 +1520,41 @@ function handleBatchCanvasClick(e) {
     const y = (e.clientY - rect.top) * scaleY;
 
     const layout = calculateBatchLayout();
+    const positions = layout.positions;
 
-    // Calculate the scale factor that was applied to the canvas
+    // Check if scale was applied to canvas
     let scaleFactor = 1;
-    let maxWidth = 0;
-    let maxHeight = 0;
-
-    layout.forEach(pos => {
-        maxWidth = Math.max(maxWidth, pos.x + pos.width);
-        maxHeight = Math.max(maxHeight, pos.y + pos.height);
-    });
-
-    maxWidth += state.spacing;
-    maxHeight += state.spacing;
-
-    if (maxWidth > state.maxCanvasSize || maxHeight > state.maxCanvasSize) {
+    if (layout.canvasWidth > state.canvasMaxWidth || layout.canvasHeight > state.canvasMaxHeight) {
         scaleFactor = Math.min(
-            state.maxCanvasSize / maxWidth,
-            state.maxCanvasSize / maxHeight
+            state.canvasMaxWidth / layout.canvasWidth,
+            state.canvasMaxHeight / layout.canvasHeight
         );
     }
 
+    // Find which image was clicked
     let clickedIndex = -1;
-    layout.forEach((pos, index) => {
+    positions.forEach((pos, index) => {
         const scaledX = pos.x * scaleFactor;
         const scaledY = pos.y * scaleFactor;
-        const scaledWidth = pos.width * scaleFactor;
-        const scaledHeight = pos.height * scaleFactor;
+        const scaledSize = pos.width * scaleFactor;
 
-        if (x >= scaledX && x <= scaledX + scaledWidth &&
-            y >= scaledY && y <= scaledY + scaledHeight) {
+        if (x >= scaledX && x <= scaledX + scaledSize &&
+            y >= scaledY && y <= scaledY + scaledSize) {
             clickedIndex = index;
         }
     });
 
-    state.selectedImageIndex = clickedIndex;
-    updateBatchControls();
-    updatePreview();
+    if (clickedIndex !== -1) {
+        state.selectedImageIndex = clickedIndex;
+        updateBatchControls();
+        scheduleCanvasUpdate(); // Redraw to show selection
+        console.log(`Selected image ${clickedIndex + 1}: ${state.batchImages[clickedIndex].name}`);
+    } else {
+        // Clicked outside all images, deselect
+        state.selectedImageIndex = -1;
+        updateBatchControls();
+        scheduleCanvasUpdate();
+    }
 }
 
 function updateBatchControls() {
@@ -1597,31 +1593,29 @@ function calculateBatchLayout() {
     const count = state.batchImages.length;
     if (count === 0) return [];
 
-    // Calculate thumbnail size based on image count
-    // More images = smaller thumbnails to fit in fixed canvas
-    let thumbSize;
-    if (count <= 10) {
-        thumbSize = 150;
-    } else if (count <= 25) {
-        thumbSize = 120;
-    } else if (count <= 50) {
-        thumbSize = 100;
-    } else if (count <= 100) {
-        thumbSize = 80;
-    } else {
-        thumbSize = 60;
-    }
+    // Use global dimensions from the layout inputs (e.g., 2100x800)
+    const targetCanvasWidth = state.globalWidth || 800;
+    const targetCanvasHeight = state.globalHeight || 800;
 
-    // Calculate optimal columns (try to make canvas roughly square)
-    const itemsPerRow = Math.ceil(Math.sqrt(count * (state.canvasMaxWidth / state.canvasMaxHeight)));
-    const cols = Math.max(1, Math.min(itemsPerRow, 20)); // Max 20 columns
+    // Calculate thumbnail size based on image count and target canvas size
+    // Calculate columns based on aspect ratio of target canvas
+    const aspectRatio = targetCanvasWidth / targetCanvasHeight;
+    const itemsPerRow = Math.ceil(Math.sqrt(count * aspectRatio));
+    const cols = Math.max(1, itemsPerRow);
     const rows = Math.ceil(count / cols);
 
-    // Calculate total canvas size
+    // Calculate thumbnail size to fit in the target canvas
+    const thumbSize = Math.min(
+        Math.floor((targetCanvasWidth - (cols + 1) * state.spacing) / cols),
+        Math.floor((targetCanvasHeight - (rows + 1) * state.spacing) / rows),
+        150 // Max thumbnail size
+    );
+
+    // Calculate actual canvas size (will match target as close as possible)
     const canvasWidth = cols * thumbSize + (cols + 1) * state.spacing;
     const canvasHeight = rows * thumbSize + (rows + 1) * state.spacing;
 
-    console.log(`Layout: ${count} images, thumbSize: ${thumbSize}, cols: ${cols}, rows: ${rows}, canvas: ${canvasWidth}x${canvasHeight}`);
+    console.log(`Layout: ${count} images, target: ${targetCanvasWidth}x${targetCanvasHeight}, thumbSize: ${thumbSize}, cols: ${cols}, rows: ${rows}, canvas: ${canvasWidth}x${canvasHeight}`);
 
     const positions = [];
 
