@@ -641,92 +641,80 @@ function drawBatchCanvas() {
             return;
         }
 
-        const layout = calculateBatchLayout();
+        // NEW APPROACH: Draw only selected image, not all images
+        // This prevents canvas from becoming too large
 
-        // Calculate total canvas size needed
-        let maxWidth = 0;
-        let maxHeight = 0;
+        const selectedIndex = state.selectedImageIndex >= 0 ? state.selectedImageIndex : 0;
+        const imgData = state.batchImages[selectedIndex];
+        const img = imgData?.image;
 
-        layout.forEach(pos => {
-            maxWidth = Math.max(maxWidth, pos.x + pos.width);
-            maxHeight = Math.max(maxHeight, pos.y + pos.height);
-        });
-
-        // Add padding
-        maxWidth += state.spacing;
-        maxHeight += state.spacing;
-
-        console.log(`Canvas size: ${maxWidth}x${maxHeight}, images: ${state.batchImages.length}`);
-
-        // Limit canvas size to prevent browser crashes
-        // If canvas would be too large, scale down the layout
-        let scaleFactor = 1;
-        if (maxWidth > state.maxCanvasSize || maxHeight > state.maxCanvasSize) {
-            scaleFactor = Math.min(
-                state.maxCanvasSize / maxWidth,
-                state.maxCanvasSize / maxHeight
-            );
-            maxWidth = Math.floor(maxWidth * scaleFactor);
-            maxHeight = Math.floor(maxHeight * scaleFactor);
-            console.log(`Canvas scaled to: ${maxWidth}x${maxHeight} (${Math.round(scaleFactor * 100)}%)`);
+        if (!img || !img.complete || img.width === 0 || img.height === 0) {
+            // Image not ready, show placeholder
+            elements.canvas.width = 400;
+            elements.canvas.height = 300;
+            elements.ctx.fillStyle = '#1a1a1a';
+            elements.ctx.fillRect(0, 0, 400, 300);
+            elements.ctx.fillStyle = '#888';
+            elements.ctx.font = '16px Inter';
+            elements.ctx.textAlign = 'center';
+            elements.ctx.fillText('Cargando imagen...', 200, 150);
+            return;
         }
 
-        elements.canvas.width = maxWidth;
-        elements.canvas.height = maxHeight;
+        // Display info text
+        const infoText = `Imagen ${selectedIndex + 1} de ${state.batchImages.length}`;
+        const nameText = imgData.name || 'Imagen';
+
+        // Set canvas to show thumbnail nicely centered
+        const displaySize = 300;
+        elements.canvas.width = displaySize + 40;
+        elements.canvas.height = displaySize + 80;
 
         // Clear
-        elements.ctx.fillStyle = '#1a1a1a'; // Dark background for batch canvas
-        elements.ctx.fillRect(0, 0, maxWidth, maxHeight);
+        elements.ctx.fillStyle = '#1a1a1a';
+        elements.ctx.fillRect(0, 0, elements.canvas.width, elements.canvas.height);
 
-        // Show info message if canvas is scaled
-        if (scaleFactor < 1) {
-            elements.ctx.fillStyle = '#8b5cf6';
-            elements.ctx.font = '14px Inter';
-            elements.ctx.textAlign = 'center';
-            elements.ctx.fillText(
-                `Preview escalado (${Math.round(scaleFactor * 100)}%) - El procesamiento usa resolución completa`,
-                maxWidth / 2,
-                20
-            );
-        }
+        // Draw info text at top
+        elements.ctx.fillStyle = '#8b5cf6';
+        elements.ctx.font = '14px Inter';
+        elements.ctx.textAlign = 'center';
+        elements.ctx.fillText(infoText, elements.canvas.width / 2, 20);
+        elements.ctx.fillStyle = '#fff';
+        elements.ctx.font = '12px Inter';
+        elements.ctx.fillText(nameText, elements.canvas.width / 2, 40);
 
-        // Draw images - simplified since all thumbnails are square
-        layout.forEach((pos, index) => {
-            const imgData = state.batchImages[index];
-            const img = imgData.image;
+        // Draw thumbnail centered
+        const x = (elements.canvas.width - displaySize) / 2;
+        const y = 50;
 
-            // Skip if image is not loaded
-            if (!img || !img.complete || img.width === 0 || img.height === 0) {
-                console.warn(`Image ${index} not loaded, skipping`);
-                return;
-            }
+        // Draw border
+        elements.ctx.strokeStyle = '#333';
+        elements.ctx.lineWidth = 2;
+        elements.ctx.strokeRect(x - 2, y - 2, displaySize + 4, displaySize + 4);
 
-            // Apply scale factor if canvas was scaled down
-            const scaledX = Math.floor(pos.x * scaleFactor);
-            const scaledY = Math.floor(pos.y * scaleFactor);
-            const scaledSize = Math.floor(pos.width * scaleFactor);
+        // Draw image
+        elements.ctx.drawImage(img, x, y, displaySize, displaySize);
 
-            // Draw the thumbnail (already square, just draw it)
-            elements.ctx.drawImage(img, scaledX, scaledY, scaledSize, scaledSize);
+        // Draw selection indicator
+        elements.ctx.fillStyle = '#8b5cf6';
+        elements.ctx.font = '12px Inter';
+        elements.ctx.fillText('✓ Seleccionada', elements.canvas.width / 2, elements.canvas.height - 10);
 
-            // Draw selection highlight
-            if (index === state.selectedImageIndex) {
-                elements.ctx.strokeStyle = '#8b5cf6';
-                elements.ctx.lineWidth = 4;
-                elements.ctx.strokeRect(scaledX, scaledY, scaledSize, scaledSize);
-            }
-        });
+        console.log(`Drew image ${selectedIndex + 1}/${state.batchImages.length}: ${nameText}`);
+
     } catch (error) {
         console.error('Error in drawBatchCanvas:', error);
         // Show error on canvas
-        elements.canvas.width = 800;
-        elements.canvas.height = 400;
+        elements.canvas.width = 400;
+        elements.canvas.height = 200;
         elements.ctx.fillStyle = '#1a1a1a';
-        elements.ctx.fillRect(0, 0, 800, 400);
+        elements.ctx.fillRect(0, 0, 400, 200);
         elements.ctx.fillStyle = '#ef4444';
-        elements.ctx.font = '16px Inter';
+        elements.ctx.font = '14px Inter';
         elements.ctx.textAlign = 'center';
-        elements.ctx.fillText('Error al dibujar canvas. Verifica la consola.', 400, 200);
+        elements.ctx.fillText('Error al dibujar canvas.', 200, 90);
+        elements.ctx.font = '12px Inter';
+        elements.ctx.fillText('Verifica la consola para más detalles.', 200, 120);
     }
 }
 
@@ -1701,8 +1689,6 @@ function addToBatchQueue(file) {
                 };
 
                 thumbnailImg.onload = () => {
-                    const isFirstImage = state.batchImages.length === 0;
-
                     state.batchImages.push({
                         file: file,
                         name: file.name.replace(/\.[^/.]+$/, ''),
@@ -1727,11 +1713,9 @@ function addToBatchQueue(file) {
                     // Update the batch queue UI
                     updateBatchQueueUIOnly();
 
-                    // For first image, select it
-                    if (isFirstImage) {
-                        state.selectedImageIndex = 0;
-                        updateBatchControls();
-                    }
+                    // Always select the newly added image
+                    state.selectedImageIndex = state.batchImages.length - 1;
+                    updateBatchControls();
 
                     // Schedule canvas update (uses debounce to avoid freezing)
                     scheduleCanvasUpdate();
