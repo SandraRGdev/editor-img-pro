@@ -22,9 +22,9 @@ const state = {
     globalHeight: 800,
     spacing: 20,
     selectedImageIndex: -1, // -1 means no selection (global mode)
-    // Canvas size limits (to prevent browser crashes)
-    canvasMaxWidth: 2048, // Fixed canvas width
-    canvasMaxHeight: 2048, // Fixed canvas height
+    // Canvas size limits - high enough for most use cases
+    canvasMaxWidth: 8192, // Maximum canvas width (browser safe limit)
+    canvasMaxHeight: 8192, // Maximum canvas height (browser safe limit)
     spacing: 10, // Spacing between thumbnails
     canvasRafId: null, // RequestAnimationFrame ID for debouncing
     thumbSize: 150, // Default thumbnail size (will be adjusted dynamically)
