@@ -626,6 +626,8 @@ function scheduleCanvasUpdate() {
 
 function drawBatchCanvas() {
     try {
+        console.log(`drawBatchCanvas: ${state.batchImages.length} images`);
+
         if (state.batchImages.length === 0) {
             // Clear canvas or show placeholder
             elements.canvas.width = 800;
@@ -644,6 +646,8 @@ function drawBatchCanvas() {
         let canvasWidth = layout.canvasWidth;
         let canvasHeight = layout.canvasHeight;
 
+        console.log(`Layout calculated: canvas=${canvasWidth}x${canvasHeight}, positions=${positions.length}`);
+
         // Ensure canvas doesn't exceed maximum size
         let scaleFactor = 1;
         if (canvasWidth > state.canvasMaxWidth || canvasHeight > state.canvasMaxHeight) {
@@ -653,24 +657,28 @@ function drawBatchCanvas() {
             );
             canvasWidth = Math.floor(canvasWidth * scaleFactor);
             canvasHeight = Math.floor(canvasHeight * scaleFactor);
-            console.log(`Canvas scaled to ${canvasWidth}x${canvasHeight}`);
+            console.log(`Canvas scaled to ${canvasWidth}x${canvasHeight} (${Math.round(scaleFactor * 100)}%)`);
         }
 
         // Set canvas size
         elements.canvas.width = canvasWidth;
         elements.canvas.height = canvasHeight;
 
+        console.log(`Canvas set to ${canvasWidth}x${canvasHeight}`);
+
         // Clear with dark background
         elements.ctx.fillStyle = '#1a1a1a';
         elements.ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
         // Draw all images
+        let drawnCount = 0;
         positions.forEach((pos, index) => {
             const imgData = state.batchImages[index];
             const img = imgData?.image;
 
             // Skip if image not ready
             if (!img || !img.complete || img.width === 0 || img.height === 0) {
+                console.warn(`Image ${index} not ready:`, { img: !!img, complete: img?.complete, w: img?.width, h: img?.height });
                 return;
             }
 
@@ -679,11 +687,15 @@ function drawBatchCanvas() {
             const y = Math.floor(pos.y * scaleFactor);
             const size = Math.floor(pos.width * scaleFactor);
 
+            if (index < 3) {
+                console.log(`Drawing image ${index}: pos=${pos.x},${pos.y} size=${pos.width}, scaled=${x},${y} size=${size}, img=${img.width}x${img.height}`);
+            }
+
             // Draw background for thumbnail
             elements.ctx.fillStyle = '#2a2a2a';
             elements.ctx.fillRect(x, y, size, size);
 
-            // Draw thumbnail
+            // Draw thumbnail (scale from 150px to target size)
             elements.ctx.drawImage(img, x, y, size, size);
 
             // Draw selection highlight
@@ -697,9 +709,11 @@ function drawBatchCanvas() {
                 elements.ctx.lineWidth = 1;
                 elements.ctx.strokeRect(x, y, size, size);
             }
+
+            drawnCount++;
         });
 
-        console.log(`Drew ${state.batchImages.length} images on ${canvasWidth}x${canvasHeight} canvas`);
+        console.log(`Drew ${drawnCount}/${state.batchImages.length} images on ${canvasWidth}x${canvasHeight} canvas`);
 
     } catch (error) {
         console.error('Error in drawBatchCanvas:', error);
