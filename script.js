@@ -23,11 +23,13 @@ const state = {
     spacing: 20,
     selectedImageIndex: -1, // -1 means no selection (global mode)
     // Canvas size limits (to prevent browser crashes)
-    maxCanvasSize: 8192, // Maximum canvas dimension (reduced for safety)
+    maxCanvasSize: 4096, // Maximum canvas dimension (very conservative)
     previewScale: 0.1, // Scale factor for preview when many images
     thumbnailSize: 200, // Size for thumbnails in preview
     canvasRafId: null, // RequestAnimationFrame ID for debouncing
-    maxThumbSize: 120, // Maximum thumbnail size for preview (reduced for memory)
+    thumbSize: 80, // Fixed thumbnail size for preview (square)
+    maxThumbDisplayWidth: 100, // Max width for thumbnail display
+    gridCols: 6, // Fixed number of columns for grid
     updateScheduled: false // Flag for update scheduling
 };
 
@@ -688,7 +690,7 @@ function drawBatchCanvas() {
             );
         }
 
-        // Draw images
+        // Draw images - simplified since all thumbnails are square
         layout.forEach((pos, index) => {
             const imgData = state.batchImages[index];
             const img = imgData.image;
@@ -699,70 +701,21 @@ function drawBatchCanvas() {
                 return;
             }
 
-        // Apply scale factor if canvas was scaled down
-        const scaledX = Math.floor(pos.x * scaleFactor);
-        const scaledY = Math.floor(pos.y * scaleFactor);
-        const scaledWidth = Math.floor(pos.width * scaleFactor);
-        const scaledHeight = Math.floor(pos.height * scaleFactor);
+            // Apply scale factor if canvas was scaled down
+            const scaledX = Math.floor(pos.x * scaleFactor);
+            const scaledY = Math.floor(pos.y * scaleFactor);
+            const scaledSize = Math.floor(pos.width * scaleFactor);
 
-        // Draw individual image logic (similar to single mode but at specific position)
-        const targetWidth = scaledWidth;
-        const targetHeight = scaledHeight;
+            // Draw the thumbnail (already square, just draw it)
+            elements.ctx.drawImage(img, scaledX, scaledY, scaledSize, scaledSize);
 
-        // Save context state
-        elements.ctx.save();
-
-        // Clip to the target area
-        elements.ctx.beginPath();
-        elements.ctx.rect(scaledX, scaledY, targetWidth, targetHeight);
-        elements.ctx.clip();
-
-        // Calculate drawing params (cover/contain)
-        const imgAspect = img.width / img.height;
-        const targetAspect = targetWidth / targetHeight;
-
-        let drawWidth, drawHeight, offsetX, offsetY;
-
-        if (imgData.maintainAspect) {
-            if (imgAspect > targetAspect) {
-                drawWidth = targetWidth;
-                drawHeight = targetWidth / imgAspect;
-                offsetX = 0;
-                offsetY = (targetHeight - drawHeight) / 2;
-            } else {
-                drawHeight = targetHeight;
-                drawWidth = targetHeight * imgAspect;
-                offsetX = (targetWidth - drawWidth) / 2;
-                offsetY = 0;
+            // Draw selection highlight
+            if (index === state.selectedImageIndex) {
+                elements.ctx.strokeStyle = '#8b5cf6';
+                elements.ctx.lineWidth = 4;
+                elements.ctx.strokeRect(scaledX, scaledY, scaledSize, scaledSize);
             }
-        } else {
-            // Cover mode
-            if (imgAspect > targetAspect) {
-                drawHeight = targetHeight;
-                drawWidth = targetHeight * imgAspect;
-                const maxOffset = drawWidth - targetWidth;
-                offsetX = -(maxOffset * imgData.focusX);
-                offsetY = 0;
-            } else {
-                drawWidth = targetWidth;
-                drawHeight = targetWidth / imgAspect;
-                const maxOffset = drawHeight - targetHeight;
-                offsetY = -(maxOffset * imgData.focusY);
-                offsetX = 0;
-            }
-        }
-
-        elements.ctx.drawImage(img, scaledX + offsetX, scaledY + offsetY, drawWidth, drawHeight);
-
-        elements.ctx.restore();
-
-        // Draw selection highlight
-        if (index === state.selectedImageIndex) {
-            elements.ctx.strokeStyle = '#8b5cf6'; // Primary color
-            elements.ctx.lineWidth = 4;
-            elements.ctx.strokeRect(scaledX, scaledY, targetWidth, targetHeight);
-        }
-    });
+        });
     } catch (error) {
         console.error('Error in drawBatchCanvas:', error);
         // Show error on canvas
@@ -1673,40 +1626,25 @@ function calculateBatchLayout() {
     const count = state.batchImages.length;
     if (count === 0) return [];
 
-    // ALWAYS use the actual thumbnail dimensions for preview layout
+    // Use FIXED square thumbnails for predictable canvas size
     // This prevents canvas from becoming too large
-    const cols = Math.ceil(Math.sqrt(count));
+    const thumbSize = state.thumbSize; // 80px square
+    const cols = state.gridCols; // Fixed 6 columns
     const positions = [];
-    let currentX = state.spacing;
-    let currentY = state.spacing;
-    let currentRowHeight = 0;
 
     for (let i = 0; i < count; i++) {
         const imgData = state.batchImages[i];
-        // Use the actual thumbnail image dimensions
-        let w = imgData.image.width;
-        let h = imgData.image.height;
-
-        // Grid position
+        const row = Math.floor(i / cols);
         const col = i % cols;
 
-        if (col === 0 && i > 0) {
-            currentX = state.spacing;
-            currentY += currentRowHeight + state.spacing;
-            currentRowHeight = 0;
-        }
-
         positions.push({
-            x: currentX,
-            y: currentY,
-            width: w,
-            height: h,
+            x: state.spacing + col * (thumbSize + state.spacing),
+            y: state.spacing + row * (thumbSize + state.spacing),
+            width: thumbSize,
+            height: thumbSize,
             originalWidth: imgData.originalWidth || imgData.width,
             originalHeight: imgData.originalHeight || imgData.height
         });
-
-        currentX += w + state.spacing;
-        currentRowHeight = Math.max(currentRowHeight, h);
     }
 
     return positions;
@@ -1728,28 +1666,34 @@ function addToBatchQueue(file) {
             try {
                 console.log(`Processing image: ${file.name}, size: ${img.width}x${img.height}, total images: ${state.batchImages.length + 1}`);
 
-                // Create a thumbnail for preview to save memory
+                // Create a FIXED SQUARE thumbnail for preview to save memory
+                // This ensures predictable canvas size
                 const thumbnailCanvas = document.createElement('canvas');
-                const maxSize = state.maxThumbSize; // 120px for memory efficiency
-                let thumbWidth = img.width;
-                let thumbHeight = img.height;
+                const thumbSize = state.thumbSize; // 80px square
 
-                // Scale down if image is too large
-                if (thumbWidth > maxSize || thumbHeight > maxSize) {
-                    const aspect = thumbWidth / thumbHeight;
-                    if (thumbWidth > thumbHeight) {
-                        thumbWidth = maxSize;
-                        thumbHeight = maxSize / aspect;
-                    } else {
-                        thumbHeight = maxSize;
-                        thumbWidth = maxSize * aspect;
-                    }
+                thumbnailCanvas.width = thumbSize;
+                thumbnailCanvas.height = thumbSize;
+                const thumbCtx = thumbnailCanvas.getContext('2d');
+
+                // Calculate crop dimensions (center crop, like object-fit: cover)
+                const imgAspect = img.width / img.height;
+                let srcX, srcY, srcW, srcH;
+
+                if (imgAspect > 1) {
+                    // Horizontal image - crop sides
+                    srcH = img.height;
+                    srcW = img.height;
+                    srcX = (img.width - img.height) / 2;
+                    srcY = 0;
+                } else {
+                    // Vertical image - crop top/bottom
+                    srcW = img.width;
+                    srcH = img.width;
+                    srcX = 0;
+                    srcY = (img.height - img.width) / 2;
                 }
 
-                thumbnailCanvas.width = thumbWidth;
-                thumbnailCanvas.height = thumbHeight;
-                const thumbCtx = thumbnailCanvas.getContext('2d');
-                thumbCtx.drawImage(img, 0, 0, thumbWidth, thumbHeight);
+                thumbCtx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, thumbSize, thumbSize);
 
                 const thumbnailImg = new Image();
                 thumbnailImg.onerror = (err) => {
