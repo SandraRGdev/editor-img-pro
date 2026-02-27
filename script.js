@@ -26,7 +26,8 @@ const state = {
     maxCanvasSize: 16384, // Maximum canvas dimension (safe limit)
     previewScale: 0.1, // Scale factor for preview when many images
     thumbnailSize: 200, // Size for thumbnails in preview
-    pendingCanvasUpdate: false // Prevent multiple canvas updates
+    pendingCanvasUpdate: false, // Prevent multiple canvas updates
+    maxThumbSize: 150 // Maximum thumbnail size for preview (reduced from 400)
 };
 
 // ===== DOM Elements =====
@@ -1661,7 +1662,7 @@ function addToBatchQueue(file) {
         img.onload = () => {
             // Create a thumbnail for preview to save memory
             const thumbnailCanvas = document.createElement('canvas');
-            const maxSize = 400; // Reduced from 800 to 400 for better performance
+            const maxSize = state.maxThumbSize; // Use state config (150px for memory efficiency)
             let thumbWidth = img.width;
             let thumbHeight = img.height;
 
